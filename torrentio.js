@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v6-series-bulk';
+    var PLUGIN_VERSION = 'v7-toggle-descr';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
@@ -263,7 +263,7 @@
                 },
                 field: {
                     name: PLUGIN_TITLE + ': дополнительный парсер',
-                    description: 'Объединять результаты Torrentio с выбранным выше парсером'
+                    description: 'Объединять результаты Torrentio с выбранным ниже парсером'
                 },
                 onRender: function (item) {
                     setTimeout(function () {
