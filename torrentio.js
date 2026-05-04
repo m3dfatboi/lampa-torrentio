@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v5-hide-date-peers';
+    var PLUGIN_VERSION = 'v6-series-bulk';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
@@ -169,20 +169,15 @@
         return results;
     }
 
-    function buildUrl(type, imdb, season, episode) {
-        if (type === 'series' && season && episode) {
-            return TORRENTIO_BASE + '/stream/series/' + imdb + ':' + season + ':' + episode + '.json';
-        }
-        if (type === 'series') {
-            return TORRENTIO_BASE + '/stream/series/' + imdb + ':1:1.json';
-        }
+    function buildUrl(type, imdb) {
+        if (type === 'series') return TORRENTIO_BASE + '/stream/series/' + imdb + '.json';
         return TORRENTIO_BASE + '/stream/movie/' + imdb + '.json';
     }
 
     var network = new Lampa.Reguest();
 
-    function fetchStreams(imdb, type, season, episode, done) {
-        var url = buildUrl(type, imdb, season, episode);
+    function fetchStreams(imdb, type, done) {
+        var url = buildUrl(type, imdb);
         logDebug('fetch', url);
 
         network.timeout(15000);
@@ -206,43 +201,18 @@
                 return originalGet(params, oncomplete, onerror);
             }
 
-            var fetches = [];
+            fetchStreams(imdb, type, function (err, results) {
+                var deduped = dedupByHash(results || []);
+                deduped.sort(function (a, b) { return (b.Seeders || 0) - (a.Seeders || 0); });
 
-            if (type === 'series') {
-                var seasons = movie.number_of_seasons || 1;
-                if (seasons > 6) seasons = 6;
+                logDebug('total', deduped.length, 'unique torrents for', imdb);
 
-                for (var s = 1; s <= seasons; s++) {
-                    fetches.push({ season: s, episode: 1 });
+                if (!deduped.length && err) {
+                    originalGet(params, oncomplete, onerror);
                 }
-            }
-            else {
-                fetches.push({});
-            }
-
-            var pending = fetches.length;
-            var allResults = [];
-            var anyFatal = null;
-
-            fetches.forEach(function (slot) {
-                fetchStreams(imdb, type, slot.season, slot.episode, function (err, results) {
-                    if (results && results.length) allResults = allResults.concat(results);
-                    if (err) anyFatal = err;
-
-                    if (--pending === 0) {
-                        var deduped = dedupByHash(allResults);
-                        deduped.sort(function (a, b) { return (b.Seeders || 0) - (a.Seeders || 0); });
-
-                        logDebug('total', deduped.length, 'unique torrents for', imdb);
-
-                        if (!deduped.length && anyFatal) {
-                            originalGet(params, oncomplete, onerror);
-                        }
-                        else {
-                            oncomplete({ Results: deduped });
-                        }
-                    }
-                });
+                else {
+                    oncomplete({ Results: deduped });
+                }
             });
         });
     }
