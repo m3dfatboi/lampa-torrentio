@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v7-toggle-descr';
+    var PLUGIN_VERSION = 'v8-dedup-infohash';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
@@ -229,6 +229,28 @@
         return out;
     }
 
+    function extractInfoHash(item) {
+        if (!item) return '';
+        var magnet = item.MagnetUri || item.Link || '';
+        var m = magnet.match(/btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})/i);
+        return m ? m[1].toLowerCase() : '';
+    }
+
+    function dedupByInfoHash(items) {
+        var seen = {};
+        var out = [];
+        items.forEach(function (item) {
+            if (!item) return;
+            var key = extractInfoHash(item);
+            if (key) {
+                if (seen[key]) return;
+                seen[key] = true;
+            }
+            out.push(item);
+        });
+        return out;
+    }
+
     function registerParserType() {
         if (!Lampa.Params || !Lampa.Params.values) {
             logDebug('Lampa.Params not available, parser type cannot be registered in settings');
@@ -328,12 +350,13 @@
         function maybeFinalize() {
             if (!nativeDone || !addonDone) return;
 
-            var merged = (nativeResults || []).concat(addonResults || []);
-            merged = dedupByHash(merged.filter(function (it) { return it && it.hash; }))
-                .concat(merged.filter(function (it) { return it && !it.hash; }));
+            var nativeArr = nativeResults || [];
+            var addonArr = addonResults || [];
+
+            var merged = dedupByInfoHash(nativeArr.concat(addonArr));
             merged.sort(function (a, b) { return (b.Seeders || 0) - (a.Seeders || 0); });
 
-            logDebug('combined: native=' + (nativeResults || []).length + ' addon=' + (addonResults || []).length + ' merged=' + merged.length);
+            logDebug('combined: native=' + nativeArr.length + ' addon=' + addonArr.length + ' merged=' + merged.length + ' (deduped by infoHash)');
 
             if (anySuccess || merged.length) {
                 oncomplete({ Results: merged });
