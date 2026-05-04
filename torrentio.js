@@ -3,18 +3,23 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v1';
+    var PLUGIN_VERSION = 'v3-native-parser-type';
+    var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
 
     if (!window.Lampa) return;
-    if (!Lampa.Parser || typeof Lampa.Parser.get !== 'function') return;
+
+    var Lampa = window.Lampa;
 
     if (window.console && window.console.log) {
         try { console.log('[Torrentio]', 'plugin source loaded', PLUGIN_VERSION); } catch (e) {}
     }
 
-    var Lampa = window.Lampa;
+    if (!Lampa.Parser || typeof Lampa.Parser.get !== 'function') {
+        if (window.console && console.log) console.log('[Torrentio]', 'Lampa.Parser not available, abort');
+        return;
+    }
 
     function logDebug() {
         if (!window.console || !console.log) return;
@@ -253,11 +258,43 @@
         return out;
     }
 
+    function registerParserType() {
+        if (!Lampa.Params || !Lampa.Params.values) {
+            logDebug('Lampa.Params not available, parser type cannot be registered in settings');
+            return;
+        }
+
+        var bucket = Lampa.Params.values['parser_torrent_type'];
+        if (!bucket || typeof bucket !== 'object') {
+            logDebug('parser_torrent_type values bucket not found');
+            return;
+        }
+
+        if (bucket[PARSER_TYPE]) return;
+
+        bucket[PARSER_TYPE] = PLUGIN_TITLE;
+        logDebug('registered parser type', PARSER_TYPE, 'in Lampa.Params.values.parser_torrent_type');
+    }
+
     var originalGet = Lampa.Parser.get;
 
-    if (!Lampa.Parser._torrentio_hooked) {
+    if (Lampa.Parser._torrentio_hooked !== PLUGIN_VERSION) {
+        if (Lampa.Parser._torrentio_original_get) originalGet = Lampa.Parser._torrentio_original_get;
+        Lampa.Parser._torrentio_original_get = originalGet;
         Lampa.Parser._torrentio_hooked = PLUGIN_VERSION;
-        Lampa.Parser.get = torrentioGet;
+
+        Lampa.Parser.get = function (params, oncomplete, onerror) {
+            var type = Lampa.Storage && Lampa.Storage.field ? Lampa.Storage.field('parser_torrent_type') : '';
+
+            if (type === PARSER_TYPE) {
+                return torrentioGet(params, oncomplete, onerror);
+            }
+
+            return originalGet.call(this, params, oncomplete, onerror);
+        };
+
         logDebug('Lampa.Parser.get hooked', PLUGIN_VERSION);
     }
+
+    registerParserType();
 })();
