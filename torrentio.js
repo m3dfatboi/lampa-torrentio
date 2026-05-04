@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v4-extra-parser';
+    var PLUGIN_VERSION = 'v5-hide-date-peers';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
@@ -295,6 +295,15 @@
                     name: PLUGIN_TITLE + ': дополнительный парсер',
                     description: 'Объединять результаты Torrentio с выбранным выше парсером'
                 },
+                onRender: function (item) {
+                    setTimeout(function () {
+                        try {
+                            var anchor = item.parent().find('.settings-param[data-name="parser_use"]');
+                            if (anchor.length) item.insertAfter(anchor);
+                        }
+                        catch (e) { logDebug('relocate toggle failed:', e && e.message); }
+                    }, 0);
+                },
                 onChange: function () {}
             });
             logDebug('registered toggle torrentio_as_extra in parser settings');
@@ -302,6 +311,34 @@
         catch (e) {
             logDebug('addParam torrentio_as_extra error:', e && e.message);
         }
+    }
+
+    function hookTemplateForTorrentio() {
+        if (!Lampa.Template || typeof Lampa.Template.get !== 'function') {
+            logDebug('Lampa.Template not available, cannot hide date/grabs');
+            return;
+        }
+        if (Lampa.Template._torrentio_get_hooked === PLUGIN_VERSION) return;
+
+        var origGet = Lampa.Template._torrentio_orig_get || Lampa.Template.get;
+        Lampa.Template._torrentio_orig_get = origGet;
+        Lampa.Template._torrentio_get_hooked = PLUGIN_VERSION;
+
+        Lampa.Template.get = function (name, data, plain) {
+            var result = origGet.apply(this, arguments);
+
+            if (name === 'torrent' && data && data.source === 'torrentio' && result && typeof result.find === 'function') {
+                try {
+                    result.find('.torrent-item__date').remove();
+                    result.find('.torrent-item__grabs').remove();
+                }
+                catch (e) {}
+            }
+
+            return result;
+        };
+
+        logDebug('Lampa.Template.get hooked', PLUGIN_VERSION);
     }
 
     function isExtraEnabled() {
@@ -387,4 +424,5 @@
 
     registerParserType();
     registerExtraToggle();
+    hookTemplateForTorrentio();
 })();
