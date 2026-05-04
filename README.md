@@ -2,7 +2,7 @@
 
 Подключает Stremio-аддон [Torrentio](https://torrentio.strem.fun/) как источник торрентов в Lampa. Агрегирует публичные трекеры:
 
-`rarbg, 1337x, thepiratebay, nyaasi, tokyotosho, anidex, rutor, rutracker`
+`rarbg, 1337x, thepiratebay, nyaasi, tokyotosho, anidex`
 
 ## Что умеет
 

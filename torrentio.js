@@ -3,10 +3,10 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v8-dedup-infohash';
+    var PLUGIN_VERSION = 'v9-drop-rutrackers';
     var PARSER_TYPE = 'torrentio';
 
-    var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
+    var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex';
 
     if (!window.Lampa) return;
 
