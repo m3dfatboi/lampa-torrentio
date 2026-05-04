@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v3-native-parser-type';
+    var PLUGIN_VERSION = 'v4-extra-parser';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex,rutor,rutracker';
@@ -137,6 +137,7 @@
 
         var seen = {};
         var results = [];
+        var nowIso = new Date().toISOString();
 
         streams.forEach(function (stream) {
             if (!stream || !stream.infoHash) return;
@@ -157,7 +158,7 @@
                 Seeders: parsed.seeds,
                 Peers: 0,
                 Tracker: parsed.tracker,
-                PublishDate: '',
+                PublishDate: nowIso,
                 hash: hash,
                 quality: parsed.quality,
                 languages: parsed.languages,
@@ -276,6 +277,90 @@
         logDebug('registered parser type', PARSER_TYPE, 'in Lampa.Params.values.parser_torrent_type');
     }
 
+    function registerExtraToggle() {
+        if (!Lampa.SettingsApi || !Lampa.SettingsApi.addParam) {
+            logDebug('Lampa.SettingsApi not available');
+            return;
+        }
+
+        try {
+            Lampa.SettingsApi.addParam({
+                component: 'parser',
+                param: {
+                    name: 'torrentio_as_extra',
+                    type: 'trigger',
+                    default: false
+                },
+                field: {
+                    name: PLUGIN_TITLE + ': дополнительный парсер',
+                    description: 'Объединять результаты Torrentio с выбранным выше парсером'
+                },
+                onChange: function () {}
+            });
+            logDebug('registered toggle torrentio_as_extra in parser settings');
+        }
+        catch (e) {
+            logDebug('addParam torrentio_as_extra error:', e && e.message);
+        }
+    }
+
+    function isExtraEnabled() {
+        if (!Lampa.Storage) return false;
+        var v = Lampa.Storage.get('torrentio_as_extra', 'false');
+        return v === true || v === 'true';
+    }
+
+    function combinedGet(params, oncomplete, onerror) {
+        var nativeResults = null;
+        var addonResults = null;
+        var nativeDone = false;
+        var addonDone = false;
+        var anySuccess = false;
+        var lastError = null;
+
+        function maybeFinalize() {
+            if (!nativeDone || !addonDone) return;
+
+            var merged = (nativeResults || []).concat(addonResults || []);
+            merged = dedupByHash(merged.filter(function (it) { return it && it.hash; }))
+                .concat(merged.filter(function (it) { return it && !it.hash; }));
+            merged.sort(function (a, b) { return (b.Seeders || 0) - (a.Seeders || 0); });
+
+            logDebug('combined: native=' + (nativeResults || []).length + ' addon=' + (addonResults || []).length + ' merged=' + merged.length);
+
+            if (anySuccess || merged.length) {
+                oncomplete({ Results: merged });
+            }
+            else {
+                onerror(lastError || '');
+            }
+        }
+
+        originalGet.call(this, params, function (json) {
+            anySuccess = true;
+            nativeResults = json && json.Results ? json.Results : [];
+            nativeDone = true;
+            maybeFinalize();
+        }, function (e) {
+            lastError = e;
+            nativeResults = [];
+            nativeDone = true;
+            maybeFinalize();
+        });
+
+        torrentioGet.call(this, params, function (json) {
+            anySuccess = true;
+            addonResults = json && json.Results ? json.Results : [];
+            addonDone = true;
+            maybeFinalize();
+        }, function (e) {
+            lastError = lastError || e;
+            addonResults = [];
+            addonDone = true;
+            maybeFinalize();
+        });
+    }
+
     var originalGet = Lampa.Parser.get;
 
     if (Lampa.Parser._torrentio_hooked !== PLUGIN_VERSION) {
@@ -287,7 +372,11 @@
             var type = Lampa.Storage && Lampa.Storage.field ? Lampa.Storage.field('parser_torrent_type') : '';
 
             if (type === PARSER_TYPE) {
-                return torrentioGet(params, oncomplete, onerror);
+                return torrentioGet.call(this, params, oncomplete, onerror);
+            }
+
+            if (isExtraEnabled()) {
+                return combinedGet.call(this, params, oncomplete, onerror);
             }
 
             return originalGet.call(this, params, oncomplete, onerror);
@@ -297,4 +386,5 @@
     }
 
     registerParserType();
+    registerExtraToggle();
 })();
