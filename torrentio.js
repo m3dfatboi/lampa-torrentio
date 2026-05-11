@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v10-series-tmdb-type';
+    var PLUGIN_VERSION = 'v11-series-resolver';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex';
@@ -48,6 +48,18 @@
         return type === 'series' ? 'tv' : 'movie';
     }
 
+    function tmdbApi() {
+        if (Lampa.Api && Lampa.Api.sources && Lampa.Api.sources.tmdb && typeof Lampa.Api.sources.tmdb.external_imdb_id === 'function') {
+            return Lampa.Api.sources.tmdb;
+        }
+
+        if (Lampa.TMDB && typeof Lampa.TMDB.external_imdb_id === 'function') {
+            return Lampa.TMDB;
+        }
+
+        return null;
+    }
+
     function normalizeImdb(imdb) {
         if (!imdb) return '';
         imdb = (imdb + '').trim();
@@ -58,9 +70,11 @@
     function loadImdb(movie, type, done) {
         var embedded = movie && (movie.imdb_id || (movie.external_ids && movie.external_ids.imdb_id));
         if (embedded) return done(normalizeImdb(embedded));
-        if (!movie || !movie.id || !Lampa.TMDB || !Lampa.TMDB.external_imdb_id) return done('');
 
-        Lampa.TMDB.external_imdb_id({ type: tmdbType(type), id: movie.id }, function (imdb) {
+        var api = tmdbApi();
+        if (!movie || !movie.id || !api) return done('');
+
+        api.external_imdb_id({ type: tmdbType(type), id: movie.id }, function (imdb) {
             imdb = normalizeImdb(imdb);
             if (imdb && movie) movie.imdb_id = imdb;
             done(imdb);
@@ -182,15 +196,18 @@
         return results;
     }
 
-    function buildUrl(type, imdb) {
+    function buildUrl(type, imdb, season, episode) {
+        if (type === 'series' && season && episode) {
+            return TORRENTIO_BASE + '/stream/series/' + imdb + ':' + season + ':' + episode + '.json';
+        }
         if (type === 'series') return TORRENTIO_BASE + '/stream/series/' + imdb + '.json';
         return TORRENTIO_BASE + '/stream/movie/' + imdb + '.json';
     }
 
     var network = new Lampa.Reguest();
 
-    function fetchStreams(imdb, type, done) {
-        var url = buildUrl(type, imdb);
+    function fetchStreams(imdb, type, season, episode, done) {
+        var url = buildUrl(type, imdb, season, episode);
         logDebug('fetch', url);
 
         network.timeout(15000);
@@ -214,7 +231,7 @@
                 return originalGet(params, oncomplete, onerror);
             }
 
-            fetchStreams(imdb, type, function (err, results) {
+            fetchSeriesOrMovie(movie, imdb, type, function (err, results) {
                 var deduped = dedupByHash(results || []);
                 deduped.sort(function (a, b) { return (b.Seeders || 0) - (a.Seeders || 0); });
 
@@ -228,6 +245,31 @@
                 }
             });
         });
+    }
+
+    function fetchSeriesOrMovie(movie, imdb, type, done) {
+        if (type !== 'series') return fetchStreams(imdb, type, null, null, done);
+
+        var seasons = parseInt(movie && movie.number_of_seasons, 10) || 6;
+        if (seasons > 6) seasons = 6;
+        if (seasons < 1) seasons = 1;
+
+        var pending = seasons;
+        var allResults = [];
+        var anyError = null;
+
+        for (var s = 1; s <= seasons; s++) {
+            fetchStreams(imdb, type, s, 1, function (err, results) {
+                if (results && results.length) allResults = allResults.concat(results);
+                if (err) anyError = err;
+
+                if (--pending === 0) {
+                    if (allResults.length) return done(anyError, allResults);
+
+                    fetchStreams(imdb, type, null, null, done);
+                }
+            });
+        }
     }
 
     function dedupByHash(items) {
