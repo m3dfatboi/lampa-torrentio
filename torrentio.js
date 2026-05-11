@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v9-drop-rutrackers';
+    var PLUGIN_VERSION = 'v10-series-tmdb-type';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex';
@@ -33,7 +33,19 @@
 
     function isSeries(movie) {
         if (!movie) return false;
-        return Boolean(movie.name || movie.original_name || movie.number_of_seasons);
+        return Boolean(
+            movie.name ||
+            movie.original_name ||
+            movie.number_of_seasons ||
+            movie.number_of_episodes ||
+            movie.first_air_date ||
+            movie.media_type === 'tv' ||
+            movie.type === 'tv'
+        );
+    }
+
+    function tmdbType(type) {
+        return type === 'series' ? 'tv' : 'movie';
     }
 
     function normalizeImdb(imdb) {
@@ -44,10 +56,11 @@
     }
 
     function loadImdb(movie, type, done) {
-        if (movie && movie.imdb_id) return done(normalizeImdb(movie.imdb_id));
+        var embedded = movie && (movie.imdb_id || (movie.external_ids && movie.external_ids.imdb_id));
+        if (embedded) return done(normalizeImdb(embedded));
         if (!movie || !movie.id || !Lampa.TMDB || !Lampa.TMDB.external_imdb_id) return done('');
 
-        Lampa.TMDB.external_imdb_id({ type: type, id: movie.id }, function (imdb) {
+        Lampa.TMDB.external_imdb_id({ type: tmdbType(type), id: movie.id }, function (imdb) {
             imdb = normalizeImdb(imdb);
             if (imdb && movie) movie.imdb_id = imdb;
             done(imdb);
