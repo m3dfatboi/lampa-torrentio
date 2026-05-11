@@ -3,7 +3,7 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v12-series-bulk';
+    var PLUGIN_VERSION = 'v13-series-packs';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex';
@@ -136,13 +136,13 @@
         return map[flag] || '';
     }
 
-    function buildMagnet(stream, name) {
+    function buildMagnet(stream, name, type) {
         var hash = (stream.infoHash || '').toLowerCase();
         if (!hash) return '';
 
         var magnet = 'magnet:?xt=urn:btih:' + hash;
         if (name) magnet += '&dn=' + encodeURIComponent(name);
-        if (typeof stream.fileIdx === 'number' && stream.fileIdx >= 0) magnet += '&so=' + stream.fileIdx;
+        if (type !== 'series' && typeof stream.fileIdx === 'number' && stream.fileIdx >= 0) magnet += '&so=' + stream.fileIdx;
 
         var trackers = [
             'udp://tracker.opentrackr.org:1337/announce',
@@ -159,7 +159,7 @@
         return magnet;
     }
 
-    function streamsToResults(streams) {
+    function streamsToResults(streams, type) {
         if (!streams || !streams.length) return [];
 
         var seen = {};
@@ -174,7 +174,7 @@
             seen[hash] = true;
 
             var parsed = parseTitle(stream);
-            var magnet = buildMagnet(stream, parsed.name);
+            var magnet = buildMagnet(stream, parsed.name, type);
             if (!magnet) return;
 
             results.push({
@@ -196,22 +196,25 @@
         return results;
     }
 
-    function buildUrl(type, imdb) {
+    function buildUrl(type, imdb, season, episode) {
+        if (type === 'series' && season && episode) {
+            return TORRENTIO_BASE + '/stream/series/' + imdb + ':' + season + ':' + episode + '.json';
+        }
         if (type === 'series') return TORRENTIO_BASE + '/stream/series/' + imdb + '.json';
         return TORRENTIO_BASE + '/stream/movie/' + imdb + '.json';
     }
 
     var network = new Lampa.Reguest();
 
-    function fetchStreams(imdb, type, done) {
-        var url = buildUrl(type, imdb);
+    function fetchStreams(imdb, type, season, episode, done) {
+        var url = buildUrl(type, imdb, season, episode);
         logDebug('fetch', url);
 
         network.timeout(15000);
         network.silent(url, function (json) {
             var streams = json && json.streams ? json.streams : [];
             logDebug('returned', streams.length, 'streams');
-            done(null, streamsToResults(streams));
+            done(null, streamsToResults(streams, type));
         }, function (xhr) {
             logDebug('error', xhr && xhr.status);
             done(xhr || true, []);
@@ -228,7 +231,7 @@
                 return originalGet(params, oncomplete, onerror);
             }
 
-            fetchStreams(imdb, type, function (err, results) {
+            fetchSeriesOrMovie(movie, imdb, type, function (err, results) {
                 var deduped = dedupByHash(results || []);
                 deduped.sort(function (a, b) { return (b.Seeders || 0) - (a.Seeders || 0); });
 
@@ -240,6 +243,30 @@
                 else {
                     oncomplete({ Results: deduped });
                 }
+            });
+        });
+    }
+
+    function fetchSeriesOrMovie(movie, imdb, type, done) {
+        if (type !== 'series') return fetchStreams(imdb, type, null, null, done);
+
+        var seasons = parseInt(movie && movie.number_of_seasons, 10) || 6;
+        if (seasons > 12) seasons = 12;
+        if (seasons < 1) seasons = 1;
+
+        var fetches = [{ season: null, episode: null }];
+        for (var s = 1; s <= seasons; s++) fetches.push({ season: s, episode: 1 });
+
+        var pending = fetches.length;
+        var allResults = [];
+        var anyError = null;
+
+        fetches.forEach(function (slot) {
+            fetchStreams(imdb, type, slot.season, slot.episode, function (err, results) {
+                if (results && results.length) allResults = allResults.concat(results);
+                if (err) anyError = err;
+
+                if (--pending === 0) done(anyError, allResults);
             });
         });
     }
