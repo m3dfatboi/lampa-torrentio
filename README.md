@@ -9,7 +9,7 @@
 - Регистрируется как **полноценный тип парсера** в нативных настройках Lampa: `Настройки → Парсер → Тип парсера для торрентов → Torrentio` (рядом с Jackett / Prowlarr / TorrServer).
 - Может работать **как дополнительный парсер**: оставляешь свой основной (jacred / jackett / torrserver) и в `Настройках → Парсер` включаешь тогл «Torrentio: дополнительный парсер» — Lampa параллельно опросит и выбранный парсер, и Torrentio. Результаты мерджатся, дедуп по `infoHash`, сортировка по сидерам.
 - Для фильмов берёт IMDb ID и тянет `/stream/movie/{imdb}.json`.
-- Для сериалов берёт IMDb ID через TMDB TV endpoint и опрашивает первые до 6 сезонов (`/stream/series/{imdb}:S:1.json`); если episode-запросы пустые, пробует bulk `/stream/series/{imdb}.json`.
+- Для сериалов берёт IMDb ID через TMDB TV endpoint и тянет сериал целиком через `/stream/series/{imdb}.json`.
 - Парсит название, размер, сидеров и трекер из текстового описания стрима.
 - Конструирует magnet с `infoHash` + публичными udp-трекерами + `&so=fileIdx` для multi-file пакетов (TorrServer открывает правильный эпизод).
 - Скрывает блоки «Качают» и дату публикации в карточках Torrentio (Stremio addon эти поля не отдаёт, чтобы не показывать пустые/нулевые значения).
@@ -36,11 +36,11 @@
 Открой DevTools → Console. При загрузке плагина:
 
 ```
-[Torrentio] plugin source loaded v11-series-resolver
+[Torrentio] plugin source loaded v12-series-bulk
 [Torrentio] registered parser type torrentio in Lampa.Params.values.parser_torrent_type
 [Torrentio] registered toggle torrentio_as_extra in parser settings
-[Torrentio] Lampa.Template.get hooked v11-series-resolver
-[Torrentio] Lampa.Parser.get hooked v11-series-resolver
+[Torrentio] Lampa.Template.get hooked v12-series-bulk
+[Torrentio] Lampa.Parser.get hooked v12-series-bulk
 ```
 
 При открытии торрент-страницы:
