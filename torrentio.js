@@ -3,10 +3,12 @@
 
     var PLUGIN_ID = 'torrentio';
     var PLUGIN_TITLE = 'Torrentio';
-    var PLUGIN_VERSION = 'v13-series-packs';
+    var PLUGIN_VERSION = 'v14-series-episodes';
     var PARSER_TYPE = 'torrentio';
 
     var TORRENTIO_BASE = 'https://torrentio.strem.fun/providers=rarbg,1337x,thepiratebay,nyaasi,tokyotosho,anidex';
+    var MAX_SERIES_ENDPOINTS = 80;
+    var SERIES_CONCURRENCY = 6;
 
     if (!window.Lampa) return;
 
@@ -250,25 +252,99 @@
     function fetchSeriesOrMovie(movie, imdb, type, done) {
         if (type !== 'series') return fetchStreams(imdb, type, null, null, done);
 
-        var seasons = parseInt(movie && movie.number_of_seasons, 10) || 6;
-        if (seasons > 12) seasons = 12;
-        if (seasons < 1) seasons = 1;
+        fetchManyStreams(imdb, type, buildSeriesFetches(movie), done);
+    }
 
-        var fetches = [{ season: null, episode: null }];
-        for (var s = 1; s <= seasons; s++) fetches.push({ season: s, episode: 1 });
+    function buildSeriesFetches(movie) {
+        var fetches = [];
+        var seen = {};
 
-        var pending = fetches.length;
+        function add(season, episode) {
+            var key = (season || 'bulk') + ':' + (episode || 'all');
+            if (seen[key] || fetches.length >= MAX_SERIES_ENDPOINTS) return;
+            seen[key] = true;
+            fetches.push({ season: season, episode: episode });
+        }
+
+        add(null, null);
+
+        var seasons = [];
+        if (movie && movie.seasons && movie.seasons.forEach) {
+            movie.seasons.forEach(function (season) {
+                var seasonNumber = parseInt(season && season.season_number, 10);
+                var episodeCount = parseInt(season && season.episode_count, 10);
+                if (seasonNumber > 0 && episodeCount > 0) {
+                    seasons.push({ season: seasonNumber, episodes: episodeCount });
+                }
+            });
+        }
+
+        if (!seasons.length) {
+            var last = movie && movie.last_episode_to_air ? movie.last_episode_to_air : {};
+            var seasonCount = parseInt(movie && movie.number_of_seasons, 10) || parseInt(last.season_number, 10) || 6;
+            if (seasonCount > 12) seasonCount = 12;
+            if (seasonCount < 1) seasonCount = 1;
+
+            var totalEpisodes = parseInt(movie && movie.number_of_episodes, 10) || 0;
+            var averageEpisodes = totalEpisodes ? Math.ceil(totalEpisodes / seasonCount) : 10;
+            if (averageEpisodes < 1) averageEpisodes = 1;
+            if (averageEpisodes > 24) averageEpisodes = 24;
+
+            for (var s = 1; s <= seasonCount; s++) {
+                var episodes = averageEpisodes;
+                if (parseInt(last.season_number, 10) === s && parseInt(last.episode_number, 10) > episodes) {
+                    episodes = parseInt(last.episode_number, 10);
+                }
+                seasons.push({ season: s, episodes: episodes });
+            }
+        }
+
+        seasons.sort(function (a, b) { return a.season - b.season; });
+        seasons.forEach(function (season) { add(season.season, 1); });
+
+        var lastEpisode = movie && movie.last_episode_to_air ? movie.last_episode_to_air : {};
+        var lastSeason = parseInt(lastEpisode.season_number, 10);
+        var lastNumber = parseInt(lastEpisode.episode_number, 10);
+        if (lastSeason > 0 && lastNumber > 0) add(lastSeason, lastNumber);
+
+        seasons.forEach(function (season) {
+            for (var e = 2; e <= season.episodes; e++) add(season.season, e);
+        });
+
+        logDebug('series fetch endpoints', fetches.length);
+        return fetches;
+    }
+
+    function fetchManyStreams(imdb, type, fetches, done) {
+        if (!fetches.length) return done(null, []);
+
+        var index = 0;
+        var active = 0;
+        var completed = 0;
         var allResults = [];
         var anyError = null;
 
-        fetches.forEach(function (slot) {
+        function pump() {
+            while (active < SERIES_CONCURRENCY && index < fetches.length) {
+                run(fetches[index++]);
+            }
+        }
+
+        function run(slot) {
+            active++;
             fetchStreams(imdb, type, slot.season, slot.episode, function (err, results) {
                 if (results && results.length) allResults = allResults.concat(results);
                 if (err) anyError = err;
 
-                if (--pending === 0) done(anyError, allResults);
+                active--;
+                completed++;
+
+                if (completed === fetches.length) done(anyError, allResults);
+                else pump();
             });
-        });
+        }
+
+        pump();
     }
 
     function dedupByHash(items) {
